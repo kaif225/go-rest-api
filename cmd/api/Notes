@@ -1,0 +1,406 @@
+- Lecture 168 - PATH PATAMETERS
+   - path parameters also known as URL parameters or route parameters, are a way to capture values in the url path to use them within our 
+     application to pass data between clients and servers in a clean and readable way 
+   - For this we have add the code in teachersHandlers function to trim and print the value
+     case http.MethodGet:
+		// It is to print teachers ID that we get like : http/localhost:3000/teachers/9 . we get 9
+		fmt.Println(r.URL.Path)
+		path := strings.TrimPrefix(r.URL.Path, "/teachers/")
+		userID := strings.TrimSuffix(path, "/")
+
+		fmt.Println("ID :", userID)
+
+------------------------------------------------------------------------------------
+Lecture 169 - Query Params - server_old_2.go
+  - Query params are the common way to pass data to a server using URL 
+  - it comes after ? 
+  - there are in key value format liek - ?name=kaif&key=value 
+
+  fmt.Println(r.URL.Query())
+		queryParams := r.URL.Query()
+		sortby := queryParams.Get("sortby")
+		key := queryParams.Get("key")
+		sortorder := queryParams.Get("sortorder")
+
+		fmt.Printf("Sortby %v, Sort Order %v, Key %v\n", sortby, sortorder, key)
+-------------------------------------------------------------------------------------------    
+
+
+Lecture - 171 Multiplexer  (it get like a router for the request)
+ - first create the cert.pem and key.pem as we are enabling tls 
+ - in func main add the below code 
+    mux := http.NewServeMux()
+   - and change all http.Handlefunc to mux.Handle  and in Handler change nil to mux 
+ ** MUX allows you to define multiple routes, that is multiple endpoints for your API.
+    Each route can have its own handler function, enabling you to organize your API better .
+    MUX helps separating the login for different routes, making the code cleaner and more maintainable. 
+  
+----------------------------------------------------------------------------------------
+
+Lecture - 172 Middlewares 
+ - In simple terms Middleware is like a checkpoint or a gatekeeper that stands between a client request and the final processing 
+   of that request by the server.
+ - It can inspect, modify, or log the request before it reaches the final destination, and it can do the same with the response 
+   before it is sent back to the client.
+ - It is use for various purposes like Logging, Authentication and Authorization, Data validation, Error Handling
+
+-----------------
+
+Lecture - 173 Middlewares - Security Headers 
+ - In internal --> api --> middlewares 
+ - create a file security-headers.go  and in that I am added a SecurityHeaders() function that has all the required header 
+ - And in server.go I have called it in Handler like - middlewares.SecurityHeader(mux)
+
+---------------------------
+Lecture - 174 Middlewares - CORS
+- The Cors middleware allows you to configure which origin are permitted to access your resources.
+Steps
+ - In middlewares folder create a file - cors.go 
+ and in that add the code 
+ - In server.go we modify few things like 
+    - in import we set a name "mw" for restapi/internal/api/middlewares 
+    - And in Handler we make it like - mw.SecurityHeader(mw.Cors(mux))
+
+-----------------------------------
+Lecture - 175 Middlewares - Response time 
+ - It will calculate the time took to process a request from a client and send a response     
+steps - 
+  - Create a file "response_time.go" in middlewares folder
+  -  
+
+---------------------------------------------------
+Lecure - 176 Middlewares - compression
+ - Compression reduces the size of the response body sent over the network, which can significantly decrease loading time for your application.
+ - This is specially important for large assests like images, stylesheets, and javascript files 
+ -
+ 
+------------------------------
+
+Lecture - 177 Middleware - Rate limiter
+- Create a file rate_limiter.go 
+- and in that add the code
+- and in server.go set rl and middleware
+
+--------------------------------------------------------------------
+
+Lecture - 178 HPP Middlewares 
+- HPP, which stands for HTTP parameteres pollution, is a type of an attack, and 
+  our HP middleware will help protect our application from HTTP parameter pollution 
+  attacks.
+- HTTP parameter pollution occurs  when multiple parameters with the same name are 
+  sent in an http request.
+
+- Create hpp.go file in middlerware 
+- then in server.go set the hppOptions and add the Handler
+-------------------------------------
+Lecture - 179 - Middlewares Ordering 
+
+- mw.Hpp(hppOptions)(rl.Middleware(mw.Compression(mw.RequestTimeMiddleware(mw.SecurityHeader(mw.Cors(mux))))))
+
+- mw.Hpp(hppOptions)(rl.Middleware(mw.Compression((mw.SecurityHeader(mw.Cors(mux))))))
+
+-mw.Cors(rl.Middleware(mw.RequestTimeMiddleware(mw.SecurityHeader(mw.Compression(mw.Hpp(hppOptions)(mux))))))
+
+---------------------------------------------
+Lecture - 182 Getting All/Filtered/One Entry(ies) - GET
+
+- Creating a struct for Teacher that have ID, FirstName,LastName, Class, Subject 
+- Creating a map for teacher that will have ID as key 
+
+type Teacher struct {
+	ID        int
+	FirstName string
+	LastName  string
+	Class     string
+	Subject   string
+}
+
+var (
+	teachers = make(map[int]Teacher)
+	//mutex    = &sync.Mutex{}
+	nextID = 1
+)
+
+// Initialize dummy data
+func init() {
+	teachers[nextID] = Teacher{
+		ID:        nextID,
+		FirstName: "Jone",
+		LastName:  "Doe",
+		Class:     "9A",
+		Subject:   "English",
+	}
+	nextID++
+	teachers[nextID] = Teacher{
+		ID:        nextID,
+		FirstName: "Sam",
+		LastName:  "Smith",
+		Class:     "8A",
+		Subject:   "Geography",
+	}
+
+}
+
+func getTeacherHandler(w http.ResponseWriter, r *http.Request) {
+	// To filter based on ID , using path //
+	path := strings.TrimPrefix(r.URL.Path, "/teachers/")
+	idStr := strings.TrimSuffix(path, "/")
+	fmt.Println(idStr)
+	////////////////
+	// To handle query params
+	if idStr == "" {
+		firstName := r.URL.Query().Get("first_name")
+		lastName := r.URL.Query().Get("last_name")
+		///////////////////////////
+		teacherList := make([]Teacher, 0, len(teachers))
+
+		for _, teacher := range teachers {
+			if (firstName == "" || teacher.FirstName == firstName) && (lastName == "" || teacher.LastName == lastName) {
+				teacherList = append(teacherList, teacher)
+			}
+
+		}
+
+		response := struct {
+			Status string    `json:"status"`
+			Count  int       `json:"count"`
+			Data   []Teacher `json:"data"`
+		}{
+			Status: "Success",
+			Count:  len(teacherList),
+			Data:   teacherList,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}
+
+	// Handle Path Parameters
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	teacher, exist := teachers[id]
+	if !exist {
+		http.Error(w, "Teacher not found", http.StatusNotFound)
+	}
+	json.NewEncoder(w).Encode(teacher)
+}
+
+- In teacherHandler function for GET add the above func 
+
+  getTeacherHandler(w,r)
+
+--------------------------------
+Lecture - 182 Adding SIngle or Multiple Entries
+
+Without the mutex
+
+The Go HTTP server runs handlers concurrently — meaning if 10 clients call POST /teachers/ at the same time, Go will spin up 10 goroutines executing addTeacherHandler.
+
+Each of those goroutines will try to:
+
+Read & update nextID
+
+Insert into the shared teachers map
+
+If two requests run at the exact same time, you could end up with:
+
+Two teachers getting the same ID
+
+A corrupted teachers map (since Go maps are not safe for concurrent writes)
+
+This is what we call a race condition.
+
+✅ With the mutex
+
+When one request enters:
+
+mutex.Lock()
+
+
+It locks access to the critical section (the code that updates teachers and nextID).
+
+Any other request calling addTeacherHandler will block at mutex.Lock() until the first one finishes and calls defer mutex.Unlock().
+
+So effectively:
+
+Only one goroutine can safely update teachers and nextID at a time.
+
+Once it’s done, the lock is released and the next request continues.
+
+
+
+----------------------------------------------------
+Lecture - 184 Handlers Refractoring 
+
+- Here we will ve creating different go files for student,teacher, execs in 
+  internal -> api -> handler  and add the handler go of each in each file 
+
+- In internal folder create a folder name "models" and in that add the Teacher struct 
+   by creating a teacher.go file 
+
+- In pkg folder create utils folder i and in that create middlewareutils.go and in add the code 
+from server.go 
+
+package utils
+
+import "net/http"
+
+type Middleware func(http.Handler) http.Handler
+
+func ApplyMiddlewares(handler http.Handler, middlewares ...Middleware) http.Handler {
+	for _, middleware := range middlewares {
+		handler = middleware(handler)
+	}
+	return handler
+}
+
+- In Internal -> api -> create router folder and in that create router.go and from server.go 
+add the following go to router.go 
+
+package router
+
+import (
+	"net/http"
+	"restapi/internal/api/handlers"
+)
+
+func Router() *http.ServeMux {
+	mux := http.NewServeMux()
+	// root route
+	mux.HandleFunc("/", handlers.RootHandler)
+
+	// teacher route
+	mux.HandleFunc("/teachers/", handlers.TeachersHandler)
+
+	// student route
+	mux.HandleFunc("/students/", handlers.StudentsHandler)
+
+	// executive routes
+	mux.HandleFunc("/execs/", handlers.ExecsHandler)
+
+	return mux
+}
+
+----------------------------------
+
+Lecture - Connect API to sql 
+
+- In internal create a folder - repository --> in this create sqlconnect folder and 
+  in it create sqlconfig.go 
+  and in that add the following code 
+
+  package sqlconnect
+
+import (
+	"database/sql"
+	"fmt"
+
+	_ "github.com/go-sql-driver/mysql"
+)
+
+func ConnectDb(dbname string) (*sql.DB, error) {
+	fmt.Println("Trying to connect to mariadb")
+	connectionString := "root:example@tcp(127.0.0.1:3306)/" + dbname
+
+	db, err := sql.Open("mysql", connectionString)
+
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("COnnected to database")
+	return db, nil
+}
+
+- Now in server.go set this 
+
+_, err := sqlconnect.ConnectDb("test")
+
+	if err != nil {
+		fmt.Println("Error --- ", err)
+	}
+
+-------------------
+Lecture - 191 Environment variable 
+
+in cmd/api --> create .env and in that save the variables 
+
+DB_NAME=test
+DB_USER=root 
+DB_PASSWORD=example 
+DB_PORT=3306
+API_PORT=:3000
+DB_HOST=127.0.0.1
+
+then in sqlconfig.go make changes 
+
+user := os.Getenv("DB_USER")
+	password := os.Getenv("DB_PASSWORD")
+	port := os.Getenv("DB_PORT")
+	dbname := os.Getenv("DB_NAME")
+	host := os.Getenv("DB_HOST")
+
+connectionString := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", user, password, host, port, dbname)
+
+- then add an external package 
+  - got get  github.com/joho/godotenv
+- then in server.go add 
+
+
+	err := godotenv.Load()
+	if err != nil {
+		return nil, err
+	}
+
+-----------------------------
+Lecture - Creating our database 
+
+create table teachers(id INT PRIMARY KEY AUTO_INCREMENT, first_name varchar(255) NOT NULL , last_name varchar(255) NOT 
+NULL, email varchar(255) NOT NULL UNIQUE, class varchar(255) NOT NULL, 
+subject varchar(255) NOT NULL, INDEX(email))AUTO_INCREMENT=100;  
+
+----------------------------
+Lecture - 193 Updating POST method to post in database 
+- Updated the teachers.go file in handler folder 
+
+-----------------------
+
+Lecture - 197 Advanced filtering technique
+
+add this code in teachers handler gethandler function 
+
+//////////////lECTURE 197
+		params := map[string]string{
+			"first_name": "first_name",
+			"last_name":  "last_name",
+			"email":      "email",
+			"class":      "class",
+			"subject":    "subject",
+		}
+
+		for param, dbField := range params {
+			value := r.URL.Query().Get(param)
+
+			if value != "" {
+				query += " AND " + dbField + " = ?"
+				args = append(args, value)
+			}
+		}
+		//////////////////////////
+
+and remove code for filtering based on first and last name 
+
+firstName := r.URL.Query().Get("first_name")
+		lastName := r.URL.Query().Get("last_name")
+
+if firstName != "" {
+			query += " AND first_name = ?"
+			args = append(args, firstName)
+		}
+
+		if lastName != "" {
+			query += " AND last_name = ?"
+			args = append(args, lastName)
+
+		}
