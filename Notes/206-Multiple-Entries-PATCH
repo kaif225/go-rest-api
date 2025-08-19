@@ -1,0 +1,197 @@
+func PatchTeachersHandler(w http.ResponseWriter, r *http.Request) {
+	db, err := sqlconnect.ConnectDb()
+
+	if err != nil {
+		fmt.Println(err)
+		http.Error(w, "Unable to connect to database", http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	/*
+	  the type of updates is slice of map because we are patching key value of multiple teachers at the same time like
+	  id = 101
+	  email = ""
+	  id = 102
+	  first_name = ""
+	*/
+	var updates []map[string]interface{}
+	err = json.NewDecoder(r.Body).Decode(&updates)
+
+	if err != nil {
+		fmt.Println(err)
+		http.Error(w, "Invalid Request Payload", http.StatusBadGateway)
+		return
+	}
+
+	tx, err := db.Begin() // it starts a transaction, when you need to run a series of sql statements
+	// that should either all pass or all fail then we start a transaction
+
+	if err != nil {
+		fmt.Println(err)
+		http.Error(w, "Error Starting Transaction", http.StatusInternalServerError)
+		return
+	}
+
+	for _, update := range updates {
+		idStr, ok := update["id"].(string)
+		if !ok {
+			tx.Rollback()
+			http.Error(w, "Teacher ID is invalid", http.StatusBadRequest)
+			return
+		}
+
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			http.Error(w, "Error Converting ID to int", http.StatusBadRequest)
+		}
+
+		var teacherFromDb models.Teacher
+		err = db.QueryRow("SELECT id , first_name, last_name, email,class, subject FROM teachers WHERE id = ?", id).Scan(
+			&teacherFromDb.ID, &teacherFromDb.FirstName, &teacherFromDb.LastName, &teacherFromDb.Email, &teacherFromDb.Class, &teacherFromDb.Subject)
+		if err != nil {
+			tx.Rollback()
+			if err == sql.ErrNoRows {
+				http.Error(w, "Teacher Not Found", http.StatusNotFound)
+				return
+			}
+			fmt.Println("Kch to hai :", err)
+			http.Error(w, "Error Retriving teacher", http.StatusInternalServerError)
+			return
+		}
+		// Apply updates using reflection
+		teacherVal := reflect.ValueOf(&teacherFromDb).Elem()
+		teacherType := teacherVal.Type()
+
+		for k, v := range update {
+			if k == "id" {
+				continue
+			}
+			for i := 0; i < teacherVal.NumField(); i++ {
+				field := teacherType.Field(i)
+				if field.Tag.Get("json") == k+",omitempty" {
+					fieldVal := teacherVal.Field(i)
+					if fieldVal.CanSet() {
+						val := reflect.ValueOf(v)
+						if val.Type().ConvertibleTo(fieldVal.Type()) {
+							fieldVal.Set(val.Convert(fieldVal.Type()))
+						} else {
+							tx.Rollback()
+							log.Printf("connot convert %v to %v", val.Type(), fieldVal.Type())
+							return
+						}
+					}
+					break
+				}
+			}
+		}
+		_, err = tx.Exec("UPDATE teachers SET first_name = ?, last_name = ?,email = ?, class = ?, subject = ? WHERE id = ?", teacherFromDb.FirstName,
+			teacherFromDb.LastName, teacherFromDb.Email, teacherFromDb.Class, teacherFromDb.Subject, teacherFromDb.ID)
+		if err != nil {
+			tx.Rollback()
+			fmt.Println("Naya error:", err)
+			http.Error(w, "Error Updating teacher", http.StatusInternalServerError)
+			return
+		}
+	}
+	// COmmit the transaction
+	err = tx.Commit()
+	if err != nil {
+		fmt.Println(err)
+		http.Error(w, "Error commiting transaction", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// 207 Delete mutliple entries
+
+func DeleteTeachersHandler(w http.ResponseWriter, r *http.Request) {
+	db, err := sqlconnect.ConnectDb()
+	if err != nil {
+		fmt.Println(err)
+		http.Error(w, "Error COnnecting to database", http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	// Getting multiple ids
+	var ids []int
+
+	err = json.NewDecoder(r.Body).Decode(&ids)
+
+	if err != nil {
+		fmt.Println(err)
+		http.Error(w, "Invalid Payload", http.StatusBadRequest)
+		return
+	}
+	///////////////
+
+	// Begin a transaction
+	tx, err := db.Begin()
+	if err != nil {
+		fmt.Println(err)
+		http.Error(w, "Error Creating Transaction", http.StatusBadRequest)
+		return
+	}
+	////////////////////////
+	stmt, err := tx.Prepare("DELETE from teachers WHERE id = ?")
+	if err != nil {
+		fmt.Println(err)
+		tx.Rollback()
+		http.Error(w, "Error Preparing statement", http.StatusInternalServerError)
+		return
+	}
+	defer stmt.Close()
+
+	deletedIds := []int{}
+
+	for _, id := range ids {
+		result, err := stmt.Exec(id)
+		if err != nil {
+			tx.Rollback()
+			fmt.Println(err)
+			http.Error(w, "Error executing command", http.StatusInternalServerError)
+			return
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			tx.Rollback()
+			fmt.Println(err)
+			http.Error(w, "Error retriving deleted teachers", http.StatusInternalServerError)
+			return
+		}
+		if rowsAffected > 0 {
+			deletedIds = append(deletedIds, id)
+		}
+		if rowsAffected < 1 {
+			tx.Rollback()
+			http.Error(w, fmt.Sprintf("ID %v does not exist", id), http.StatusBadRequest)
+			return
+		}
+	}
+	// COmmit
+	err = tx.Commit()
+	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
+		http.Error(w, "Error comminting transaction", http.StatusInternalServerError)
+		return
+	}
+
+	if len(deletedIds) < 1 {
+		http.Error(w, "Ids do not exists", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	response := struct {
+		Status     string `json:"status"`
+		DeletedIDs []int  `json:"deleted_ids"`
+	}{
+		Status:     "teachers Deleted Sucessfully",
+		DeletedIDs: deletedIds,
+	}
+
+	json.NewEncoder(w).Encode(response)
+}
