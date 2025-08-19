@@ -1,3 +1,10 @@
+/*
+var students []models.Student for rows.Next() { var s models.Student rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.Title) students = append(students, s) } in clear words we define students array of slice of type Student struct, now row.Next loop over all rows then it stroes the row value in var s and
+ then we appends that s value to students var that is of tyep map of struct ?
+
+
+*/
+
 package main
 
 import (
