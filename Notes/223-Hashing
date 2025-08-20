@@ -1,0 +1,15 @@
+salt := make([]byte, 16)
+_, err := rand.Read(salt)
+
+if err != nil {
+	fmt.Println(err)
+	http.Error(w, "Error adding data", http.StatusInternalServerError)
+}
+
+hash := argon2.IDKey([]byte(newExec.Password), salt, 1, 64*1024, 4, 32)
+
+saltBase64 := base64.StdEncoding.EncodeToString(salt)
+hashbase64 := base64.StdEncoding.EncodeToString(hash)
+
+encodedHash := fmt.Sprintf("%s.%s", saltBase64, hashbase64)
+newExec.Password = encodedHash

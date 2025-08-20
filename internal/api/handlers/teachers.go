@@ -203,7 +203,21 @@ func AddTeacherHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid Request Body", http.StatusBadRequest)
 		return
 	}
-
+	//// Lecture 212
+	for _, teacher := range newTeachers {
+		val := reflect.ValueOf(teacher)
+		for i := 0; i < val.NumField(); i++ {
+			field := val.Field(i)
+			if field.Kind() == reflect.String && field.String() == "" {
+				fmt.Println("field.Kind() : ", field.Kind())
+				fmt.Println("reflect.String", reflect.String)
+				fmt.Println("field.String", field.String())
+				http.Error(w, "All fields are required", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	//////////////////////////////////
 	stmt, err := db.Prepare("INSERT INTO teachers (first_name, last_name, email, class, subject) VALUES(?,?,?,?,?)")
 
 	if err != nil {

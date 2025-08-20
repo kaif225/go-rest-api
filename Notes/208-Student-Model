@@ -1,0 +1,11 @@
+Create a file in models folder by the name student.go
+
+and in that ad a struct using which we will do the CRUD operation on student table 
+
+type Student struct {
+    ID int `json:"id.omitempty"`
+    first_name string `json:"first_name,omitempty"`
+    last_name string `json:"first_name,omitempty"`
+    Email string `json:"email,omitempty"`
+    Class string `json:"class,omitempty"`
+}

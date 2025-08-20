@@ -1,0 +1,48 @@
+in Teacher struct we will add one more tag for db columns like 
+
+
+type Teacher struct{
+    FirstName string `json:"first_name,omitempty" id:"first_name.omitempty"` 
+}
+
+similarly we will add it for other Keys
+
+and it needs package like sqlx or GORM 
+
+////////////////////////////////////
+In our case we are not using above packages so we will create a custom function 
+
+func generateInsertQuery(model interface{}) string {
+    modelType := reflect.TypeOf(model)
+    var columns, placeholders string 
+    for i := 0; i < modelType.NumField();i++ {
+        dbTag := modelType.Field(i).Tag.Get("db")
+        fmt.Println("dbTag :",dbTag)
+        dbTag = string.Suffix(dbTag, ",omitempty")
+
+        if dbTag != "" && dbTag != "id"{ \\ skip the ID field id its auto increment
+          if colums != "" {
+            colums += ","
+            placeholders += ","
+          }
+          columns += dbTag 
+          placeholders += "?"
+        }
+    }
+    fmt.Printf("INSERT INTO teachers (%s) VALUES (%s)\n", colums, placeholders)
+    return Sprintf("INSERT INTO teachers (%s) VALUES (%s)\n", colums, placeholders)
+}
+
+func getSTructValues(model interface{}) []interface{} {
+    modelValue := reflect.ValueOf(model)
+    modelType := modelValue.Type()
+    values []interface{}{}
+    for i := 0; i < modelType.NumField(); i++ {
+        dbTag := modelType.Field(i).Tag().Get("db")
+
+        if dbTag != "" && dbTag != "id,omitempty"{
+          values = append(values, modelValue.Field(i).Interface())
+        }
+    }
+
+}
